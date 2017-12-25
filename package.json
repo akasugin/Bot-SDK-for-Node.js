@@ -1,0 +1,36 @@
+{
+  "name": "bot-sdk",
+  "version": "1.0.9",
+  "description": "度秘bot开发的JS SDK",
+  "main": "index.js",
+  "scripts": {
+    "test": "mocha"
+  },
+  "author": {
+    "name": "yuanpeng01@baidu.com"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "bot-monitor-sdk": "^1.2.2",
+    "jsdoc-to-markdown": "^3.0.0",
+    "mocha": "^3.5.0",
+    "node.extend": "^2.0.0",
+    "request": "^2.83.0",
+    "should": "^12.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dueros/bot-sdk-node.js.git"
+  },
+  "readme": "# 度秘BOT SDK for Node.js\n这是一个帮助开发Bot的SDK，我们强烈建议您使用这个SDK开发度秘的Bot。当然，您可以完全自己来处理DuerOS的协议，自己完成session、nlu、result的处理，但是度秘的DuerOS对BOT的协议会经常进行升级，这样会给您带来一些麻烦。这个SDK会与DuerOS的协议一起升级，会最大限度减少对您开发bot的影响。\n\n## 通过bot-sdk可以快速的开发bot\n我们的目标是通过使用bot-sdk，可以迅速的开发一个bot，而不必过多去关注DuerOS对Bot的复杂协议。我们提供如下功能：\n\n* 封装了DuerOS的request和response\n* 提供了session简化接口\n* 提供了nlu简化接口\n    * slot 操作\n    * nlu理解交互接口（ask）\n* 提供了多轮对话开发接口\n* 提供了事件监听接口\n\n## 安装、使用BOT SDK进行开发 \n度秘BOT SDK采用npm加载 , node.js版本确保在6.10及以上。使用执行如下命令进行安装：\n```shell\nnpm install bot-sdk\n```\n\n为了开始使用BOT SDK，你需要先新建一个js文件，比如文件名是Bot.js。\n\n```javascript\nvar BaseBot = require('bot-sdk');\n\nclass Bot extends BaseBot{\n    constructor (postData) {\n        super(postData);\n    }\n}\n\nmodule.exports = Bot;\n```\n下一步，我们处理意图。Bot-sdk提供了一个函数来handle这些意图。比如，查询个税，创建一个handler，在构造函数中添加：\n\n```php\nthis.addIntentHandler('LaunchRequest', ()=>{\n    return {\n        \"outputSpeech\" : \"欢迎使用\"\n    };\n});\n\nthis.addIntentHandler('personal_income_tax.inquiry', ()=>{\n    let loc = this.getSlot('location');    \n    let monthlySalary = this.getSlot('monthlysalary');\n\n    if(!monthlySalary) {\n        let card = new Bot.Card.TextCard('你工资多少呢');\n\n        // 如果有异步操作，可以返回一个promise\n        return new Promise(function(resolve, reject){\n            resolve({\n                card : card,\n                outputSpeech : '你工资多少呢'\n            });\n        });\n    }\n\n    if(!loc) {\n        let card = new Bot.Card.TextCard('你在哪呢');\n        return {\n            card: card,\n            outputSpeech: '你在哪呢'\n        };\n\n    }\n});\n```\n这里`addIntentHandler`可以用来建立(intent) => handler的映射，第一个参数是条件，如果满足则执行对应的回调函数(第二个参数)。\n其中，this指向当前的Bot，`getSlot`继承自父类Bot，通过slot名字来获取对应的值。回调函数返回值是一个数组，可以包含多个字段，比如：`card`，`directives`，`outputSpeech`，`reprompt`。\n\n## 搭建Web服务\n\n比如，使用express作为web框架进行开发。下面是一个简单示例\n\n```javascript\nconst express = require('express');\n\nconst Bot = require('./Bot');\nvar app = express();\n\n// 探活请求\n// DuerOS会定期发送探活请求到你的服务，确保你的服务正常运转，[详情请参考](http://TODO)\napp.head('/', (req, res) => {\n    res.sendStatus(204);\n});\n\n// 监听post请求，DuerOS以http POST的方式来请求你的服务，[具体协议请参考](http://TODO)\napp.post('/', (req, res) => {\n    req.rawBody = '';\n\n    req.setEncoding('utf8');\n    req.on('data', function(chunk) { \n        req.rawBody += chunk;\n    });\n\n    req.on('end', function() {\n        var b = new Bot(JSON.parse(req.rawBody));\n        // 开启签名认证\n        // 为了避免你的服务被非法请求，建议你验证请求是否来自于DuerOS\n        b.initCertificate(req.headers, req.rawBody).enableVerifyRequestSign();\n\n        /**\n         * 如果需要监控统计功能\n         * \n         * bot-sdk 集成了监控sdk，参考：https://www.npmjs.com/package/bot-monitor-sdk\n         * 打开此功能，对服务的性能有一定的耗时增加。另外，需要在DBP平台上面上传public key，这里使用私钥签名\n         * 文档参考：https://dueros.baidu.com/didp/doc/dueros-bot-platform/dbp-deploy/authentication_markdown\n         */\n        b.setPrivateKey(__dirname + '/rsa_private_key.pem').then(function(key){\n            // 0: debug  1: online\n            b.botMonitor.setEnvironmentInfo(key, 0);\n\n            b.run().then(function(result){\n                res.send(result);\n            });\n        }, function(err){\n            console.error('error'); \n        });\n\n        \n        // 不需要监控\n        // b.run() 返回一个Promise的实例\n        //b.run().then(function(result){\n        //    res.send(result);\n        //});\n    });\n}).listen(8014);\n```\n\n\n## API 文档\n\n* [Bot](doc/Bot.md)\n* [Nlu(Bot.nlu)](doc/Nlu.md)\n* [Request(Bot.request)](doc/Request.md)\n* [Response(Bot.response)](doc/Response.md)\n* [Session(Bot.session)](doc/Session.md)\n* [Certificate](doc/Certificate.md)\n* 展现卡片\n    * [BaseCard(所有卡片基类)](doc/card/BaseCard.md)\n    * [TextCard(文本卡片)](doc/card/TextCard.md)\n    * [StandardCard(标准卡片)](doc/card/StandardCard.md)\n    * [ImageCard(图片卡片)](doc/card/ImageCard.md)\n    * [ListCard(列表卡片)](doc/card/ListCard.md)\n* 指令\n    * [BaseDirective(所有指令基类)](doc/directive/BaseDirective.md)\n    * 音频\n        * [Play(音频播放指令)](doc/directive/AudioPlayer/Play.md)\n        * [Stop(音频停止指令)](doc/directive/AudioPlayer/Stop.md)\n",
+  "readmeFilename": "README.md",
+  "bugs": {
+    "url": "https://github.com/dueros/bot-sdk-node.js/issues"
+  },
+  "_id": "bot-sdk@1.0.9",
+  "dist": {
+    "shasum": "10589a2cb6d86d9a26991feda63254c942837892"
+  },
+  "_from": "bot-sdk@",
+  "_resolved": "https://registry.npmjs.org/bot-sdk/-/bot-sdk-1.0.9.tgz"
+}
